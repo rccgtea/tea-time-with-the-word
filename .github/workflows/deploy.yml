@@ -29,16 +29,10 @@ jobs:
           cd functions
           npm run build
 
-      - name: Set functions config (GENAI key)
-        if: ${{ secrets.GENAI_KEY }}
-        run: |
-          cd functions
-          npx --yes firebase-tools functions:config:set genai.key="${{ secrets.GENAI_KEY }}"
-
-
       - name: Firebase deploy
         uses: w9jds/firebase-action@v2.2.0
         with:
           args: deploy --only functions,hosting
         env:
           FIREBASE_TOKEN: ${{ secrets.FIREBASE_TOKEN }}
+          GENAI_KEY: ${{ secrets.GENAI_KEY }}
