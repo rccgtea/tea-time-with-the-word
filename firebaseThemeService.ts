@@ -2,13 +2,13 @@ import { initializeApp } from 'firebase/app';
 import { getFirestore, doc, getDoc, setDoc } from 'firebase/firestore';
 
 const firebaseConfig = {
-  apiKey: "AIzaSyDp5XZFCJcmXPB-UfpbKp4aosqRTcbm40o",
-  authDomain: "tea-time-with-the-word.firebaseapp.com",
-  projectId: "tea-time-with-the-word",
-  storageBucket: "tea-time-with-the-word.appspot.com",
-  messagingSenderId: "995241042465",
-  appId: "1:995241042465:web:53a66b5d8edf41ddf57960",
-  measurementId: "G-BFN92LJ629",
+  apiKey: import.meta.env.VITE_FIREBASE_API_KEY,
+  authDomain: import.meta.env.VITE_FIREBASE_AUTH_DOMAIN,
+  projectId: import.meta.env.VITE_FIREBASE_PROJECT_ID,
+  storageBucket: import.meta.env.VITE_FIREBASE_STORAGE_BUCKET,
+  messagingSenderId: import.meta.env.VITE_FIREBASE_MESSAGING_SENDER_ID,
+  appId: import.meta.env.VITE_FIREBASE_APP_ID,
+  measurementId: import.meta.env.VITE_FIREBASE_MEASUREMENT_ID,
 };
 
 // Initialize Firebase app and Firestore
