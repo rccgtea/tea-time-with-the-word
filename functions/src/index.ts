@@ -132,8 +132,31 @@ async function synthesizeVoice(text: string) {
   }
 }
 
-async function generateScriptureFor(theme: string, day: number) {
-  const prompt = `You are a biblical assistant for the 'RCCG the Eagles Ark' church. The theme for this month is "${theme}". Provide a single, relevant bible scripture for day ${day} of the month that speaks to this theme. Return ONLY a JSON object that follows the schema with fields 'reference' and 'versions' (versions should include KJV, NKJV, NIV, MSG, NLT, AMP).`;
+async function generateScriptureFor(theme: string, day: number, year: number, month: number) {
+  // Fetch all scriptures already generated this month to prevent duplicates
+  const docRef = db.collection('meta').doc('dailyScripture');
+  const snap = await docRef.get();
+  const existingScriptures: string[] = [];
+  
+  if (snap.exists) {
+    const data = snap.data() as Record<string, any>;
+    // Get all scriptures from the current month (format: YYYY-MM-DD)
+    const monthPrefix = `${year}-${String(month).padStart(2, '0')}`;
+    Object.keys(data).forEach(dateKey => {
+      if (dateKey.startsWith(monthPrefix) && data[dateKey]?.reference) {
+        existingScriptures.push(data[dateKey].reference);
+      }
+    });
+  }
+
+  // Build prompt with list of already-used scriptures to avoid duplicates
+  let prompt = `You are a biblical assistant for the 'RCCG the Eagles Ark' church. The theme for this month is "${theme}". Provide a single, relevant bible scripture for day ${day} of the month that speaks to this theme.`;
+  
+  if (existingScriptures.length > 0) {
+    prompt += `\n\nIMPORTANT: The following scriptures have ALREADY been used this month. You MUST choose a DIFFERENT scripture:\n${existingScriptures.join(', ')}`;
+  }
+  
+  prompt += `\n\nReturn ONLY a JSON object that follows the schema with fields 'reference' and 'versions' (versions should include KJV, NKJV, NIV, MSG, NLT, AMP).`;
 
   const text = await callGenAI(prompt);
   if (!text) throw new Error('Empty response from GenAI');
@@ -145,6 +168,13 @@ async function generateScriptureFor(theme: string, day: number) {
     .trim();
   const parsed = JSON.parse(cleaned);
   if (!parsed.reference || !parsed.versions) throw new Error('Invalid scripture JSON');
+  
+  // Verify the generated scripture is not a duplicate
+  if (existingScriptures.includes(parsed.reference)) {
+    console.warn(`Generated duplicate scripture: ${parsed.reference}. Retrying...`);
+    throw new Error('Generated duplicate scripture - AI ignored instructions');
+  }
+  
   return parsed;
 }
 
@@ -166,7 +196,7 @@ export const getTodaysScripture = functions.https.onRequest(async (req, res) => 
     const themeDoc = await db.collection('meta').doc('themes').get();
     const monthKey = `${year}-${String(month).padStart(2, '0')}`;
     const currentTheme = (themeDoc.data() || {})[monthKey] || 'Encouragement';
-    const scripture = await generateScriptureFor(currentTheme, day);
+    const scripture = await generateScriptureFor(currentTheme, day, year, month);
 
     // Save under today key
     await docRef.set({ [todayStr]: scripture }, { merge: true });
@@ -187,7 +217,7 @@ export const scheduledDailyScripture = functions.pubsub
       const themeDoc = await db.collection('meta').doc('themes').get();
       const monthKey = `${year}-${String(month).padStart(2, '0')}`;
       const currentTheme = (themeDoc.data() || {})[monthKey] || 'Encouragement';
-      const scripture = await generateScriptureFor(currentTheme, day);
+      const scripture = await generateScriptureFor(currentTheme, day, year, month);
       const docRef = db.collection('meta').doc('dailyScripture');
       await docRef.set({ [todayStr]: scripture }, { merge: true });
       console.log('Daily scripture generated for', todayStr);
