@@ -11,6 +11,22 @@ interface UserViewProps {
   theme: string;
 }
 
+const SCRIPTURE_TZ =
+  import.meta.env.VITE_SCRIPTURE_TIMEZONE || 'America/Denver';
+
+const getTodayString = () => {
+  try {
+    return new Intl.DateTimeFormat('en-CA', {
+      timeZone: SCRIPTURE_TZ,
+      year: 'numeric',
+      month: '2-digit',
+      day: '2-digit',
+    }).format(new Date());
+  } catch {
+    return new Date().toISOString().slice(0, 10);
+  }
+};
+
 const UserView: React.FC<UserViewProps> = ({ theme }) => {
   const [scripture, setScripture] = useState<Scripture | null>(null);
   const [loading, setLoading] = useState(false);
@@ -21,7 +37,8 @@ const UserView: React.FC<UserViewProps> = ({ theme }) => {
   const today = new Date();
   const dayOfMonth = today.getDate();
   const dateString = today.toLocaleDateString('en-US', { weekday: 'long', year: 'numeric', month: 'long', day: 'numeric' });
-  const cacheKey = `${SCRIPTURE_CACHE_PREFIX}${today.toISOString().slice(0, 10)}`; // YYYY-MM-DD
+  const todayKey = getTodayString();
+  const cacheKey = `${SCRIPTURE_CACHE_PREFIX}${todayKey}`; // YYYY-MM-DD
 
   useEffect(() => {
     if (!theme) {

@@ -4,10 +4,26 @@ import react from '@vitejs/plugin-react';
 
 export default defineConfig(({ mode }) => {
     const env = loadEnv(mode, '.', '');
+    const projectId = env.VITE_FIREBASE_PROJECT_ID || 'tea-time-with-the-word';
+    const cloudFunctionBase =
+      env.VITE_CHAT_PROXY_TARGET ||
+      `https://us-central1-${projectId}.cloudfunctions.net`;
     return {
       server: {
         port: 3000,
         host: '0.0.0.0',
+        proxy: {
+          '/api/chat': {
+            target: cloudFunctionBase,
+            changeOrigin: true,
+            rewrite: (p) => p.replace(/^\/api\/chat$/, '/chat'),
+          },
+          '/api/scripture': {
+            target: cloudFunctionBase,
+            changeOrigin: true,
+            rewrite: (p) => p.replace(/^\/api\/scripture$/, '/getTodaysScripture'),
+          },
+        },
       },
       plugins: [react()],
       define: {

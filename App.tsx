@@ -33,14 +33,25 @@ const App: React.FC = () => {
     setIsAdminView(true); // Directly open admin view on success
   };
 
+  const backgroundStyle = {
+    backgroundImage: `
+      radial-gradient(circle at 10% 20%, rgba(253, 224, 71, 0.25), transparent 35%),
+      radial-gradient(circle at 80% 0%, rgba(129, 140, 248, 0.25), transparent 35%),
+      radial-gradient(circle at 50% 80%, rgba(45, 212, 191, 0.2), transparent 30%),
+      linear-gradient(135deg, #020617, #0f172a 55%, #1e1b4b)
+    `,
+  } as const;
+
   return (
-    <div
-      className="min-h-screen w-full bg-cover bg-center bg-fixed text-white"
-      style={{
-        backgroundImage: `url(https://images.unsplash.com/photo-1627941434125-934a3576b55a?q=80&w=1974&auto=format&fit=crop)`,
-      }}
-    >
-      <div className="min-h-screen w-full bg-black/60 backdrop-blur-sm flex flex-col items-center justify-center px-4 pt-28 pb-20">
+    <div className="relative min-h-screen w-full overflow-hidden text-white" style={backgroundStyle}>
+      <div
+        className="pointer-events-none absolute inset-0 opacity-20 mix-blend-screen"
+        style={{
+          backgroundImage: 'radial-gradient(rgba(255,255,255,0.35) 1px, transparent 1px)',
+          backgroundSize: '120px 120px',
+        }}
+      />
+      <div className="relative z-10 min-h-screen w-full bg-slate-950/60 backdrop-blur-lg flex flex-col items-center justify-center px-4 pt-28 pb-20">
         <header className="absolute top-0 left-0 w-full p-4 flex justify-between items-center">
           <div className="text-left">
             <h1 className="text-2xl font-bold tracking-tight">

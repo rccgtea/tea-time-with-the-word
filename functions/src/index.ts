@@ -4,22 +4,57 @@ import * as admin from 'firebase-admin';
 admin.initializeApp();
 const db = admin.firestore();
 
-// Read API key from functions config or environment variable.
-const GENAI_API_KEY = functions.config().genai?.key || process.env.GENAI_KEY;
+// Read API key from environment variable first, then fall back to functions config
+const GENAI_API_KEY = process.env.GENAI_KEY || functions.config().genai?.key;
+const GENAI_MODEL = process.env.GENAI_MODEL || 'gemini-2.5-flash';
+const GENAI_VOICE_MODEL = process.env.GENAI_VOICE_MODEL || 'gemini-2.0-flash';
+const SCRIPTURE_TZ = process.env.SCRIPTURE_TIMEZONE || 'America/Denver';
 if (!GENAI_API_KEY) {
-  console.warn('GenAI API key not configured. Set it with `firebase functions:config:set genai.key="YOUR_KEY"` or as GENAI_KEY env var.');
+  console.warn('GenAI API key not configured. Set it as GENAI_KEY env var or with `firebase functions:config:set genai.key="YOUR_KEY"`');
 }
+
+const getLocalDateInfo = () => {
+  try {
+    const dateStr = new Intl.DateTimeFormat('en-CA', {
+      timeZone: SCRIPTURE_TZ,
+      year: 'numeric',
+      month: '2-digit',
+      day: '2-digit',
+    }).format(new Date());
+    const [yearStr, monthStr, dayStr] = dateStr.split('-');
+    return {
+      dateStr,
+      year: Number(yearStr),
+      month: Number(monthStr),
+      day: Number(dayStr),
+    };
+  } catch {
+    const fallback = new Date();
+    return {
+      dateStr: fallback.toISOString().slice(0, 10),
+      year: fallback.getUTCFullYear(),
+      month: fallback.getUTCMonth() + 1,
+      day: fallback.getUTCDate(),
+    };
+  }
+};
 
 async function callGenAI(prompt: string) {
   if (!GENAI_API_KEY) throw new Error('GenAI API key not configured');
 
-  // Use Google Generative Language REST endpoint (v1beta2). We use an API key in the query string.
-  const model = 'text-bison@001'; // fallback model name — adjust if you have a different model
-  const url = `https://generativelanguage.googleapis.com/v1beta2/models/${encodeURIComponent(model)}:generateText?key=${encodeURIComponent(GENAI_API_KEY)}`;
+  // Use Google Generative Language REST endpoint (Gemini generateContent)
+  const url = `https://generativelanguage.googleapis.com/v1beta/models/${encodeURIComponent(GENAI_MODEL)}:generateContent?key=${encodeURIComponent(GENAI_API_KEY)}`;
 
   const body = {
-    prompt: { text: prompt },
-    temperature: 0.7,
+    contents: [
+      {
+        role: 'user',
+        parts: [{ text: prompt }],
+      },
+    ],
+    generationConfig: {
+      temperature: 0.7,
+    },
   };
 
   const resp = await fetch(url, {
@@ -34,9 +69,67 @@ async function callGenAI(prompt: string) {
   }
 
   const json: any = await resp.json();
-  // Expected shape: { candidates: [ { output: '...' } ] }
-  const text = (json && (json.candidates?.[0]?.output || json.candidates?.[0]?.content)) || json?.output || '';
+  // Gemini responses keep text inside candidates[].content.parts[].text
+  const text =
+    json?.candidates?.[0]?.content?.parts
+      ?.map((part: any) => part?.text || '')
+      .join('')
+      .trim() || '';
   return text;
+}
+
+async function synthesizeVoice(text: string) {
+  if (!text) return null;
+  try {
+    // Use Application Default Credentials (service account)
+    // No API key needed - uses Cloud Function's built-in service account
+    const projectId = process.env.GCLOUD_PROJECT || 'tea-time-with-the-word';
+    const url = `https://texttospeech.googleapis.com/v1/text:synthesize`;
+    
+    // Get access token from metadata server
+    const tokenResp = await fetch(
+      'http://metadata.google.internal/computeMetadata/v1/instance/service-accounts/default/token',
+      { headers: { 'Metadata-Flavor': 'Google' } }
+    );
+    const tokenData: any = await tokenResp.json();
+    const accessToken = tokenData.access_token;
+    
+    const body = {
+      input: { text },
+      voice: {
+        languageCode: 'en-US',
+        name: 'en-US-Neural2-F', // High-quality Neural2 voice (natural female)
+        ssmlGender: 'FEMALE',
+      },
+      audioConfig: {
+        audioEncoding: 'MP3',
+        pitch: 0,
+        speakingRate: 0.92,
+        effectsProfileId: ['small-bluetooth-speaker-class-device'],
+      },
+    };
+    
+    const resp = await fetch(url, {
+      method: 'POST',
+      headers: {
+        'Authorization': `Bearer ${accessToken}`,
+        'Content-Type': 'application/json',
+        'x-goog-user-project': projectId,
+      },
+      body: JSON.stringify(body),
+    });
+    
+    if (!resp.ok) {
+      const txt = await resp.text();
+      console.error(`TTS API error ${resp.status}:`, txt);
+      throw new Error(`Voice synthesis HTTP error ${resp.status}: ${txt}`);
+    }
+    const json: any = await resp.json();
+    return json?.audioContent || null;
+  } catch (err) {
+    console.error('Voice synthesis error:', err);
+    return null;
+  }
 }
 
 async function generateScriptureFor(theme: string, day: number) {
@@ -44,7 +137,13 @@ async function generateScriptureFor(theme: string, day: number) {
 
   const text = await callGenAI(prompt);
   if (!text) throw new Error('Empty response from GenAI');
-  const parsed = JSON.parse(text.trim());
+
+  const cleaned = text
+    .trim()
+    .replace(/^```(?:json)?/i, '')
+    .replace(/```$/, '')
+    .trim();
+  const parsed = JSON.parse(cleaned);
   if (!parsed.reference || !parsed.versions) throw new Error('Invalid scripture JSON');
   return parsed;
 }
@@ -52,26 +151,25 @@ async function generateScriptureFor(theme: string, day: number) {
 // HTTPS endpoint that returns today's scripture (reads Firestore or generates on-demand)
 export const getTodaysScripture = functions.https.onRequest(async (req, res) => {
   try {
-    const today = new Date().toISOString().slice(0, 10);
+    const { dateStr: todayStr, year, month, day } = getLocalDateInfo();
     const docRef = db.collection('meta').doc('dailyScripture');
     const snap = await docRef.get();
     if (snap.exists) {
       const data = snap.data() as Record<string, any>;
-      if (data && data[today]) {
-        res.json(data[today]);
+      if (data && data[todayStr]) {
+        res.json(data[todayStr]);
         return;
       }
     }
 
     // If not present, generate on-demand (safe fallback). Read current theme.
     const themeDoc = await db.collection('meta').doc('themes').get();
-    const monthName = new Date().toLocaleString('en-US', { month: 'long' });
-    const currentTheme = (themeDoc.data() || {})[monthName] || 'Encouragement';
-    const day = new Date().getDate();
+    const monthKey = `${year}-${String(month).padStart(2, '0')}`;
+    const currentTheme = (themeDoc.data() || {})[monthKey] || 'Encouragement';
     const scripture = await generateScriptureFor(currentTheme, day);
 
     // Save under today key
-    await docRef.set({ [today]: scripture }, { merge: true });
+    await docRef.set({ [todayStr]: scripture }, { merge: true });
     res.json(scripture);
   } catch (err) {
     console.error('Error in getTodaysScripture:', err);
@@ -82,18 +180,17 @@ export const getTodaysScripture = functions.https.onRequest(async (req, res) => 
 // Scheduled function runs daily at midnight in specified timezone and writes scripture to Firestore
 export const scheduledDailyScripture = functions.pubsub
   .schedule('0 0 * * *') // midnight
-  .timeZone('Africa/Lagos')
+  .timeZone(SCRIPTURE_TZ)
   .onRun(async (context) => {
     try {
-      const today = new Date().toISOString().slice(0, 10);
+      const { dateStr: todayStr, year, month, day } = getLocalDateInfo();
       const themeDoc = await db.collection('meta').doc('themes').get();
-      const monthName = new Date().toLocaleString('en-US', { month: 'long' });
-      const currentTheme = (themeDoc.data() || {})[monthName] || 'Encouragement';
-      const day = new Date().getDate();
+      const monthKey = `${year}-${String(month).padStart(2, '0')}`;
+      const currentTheme = (themeDoc.data() || {})[monthKey] || 'Encouragement';
       const scripture = await generateScriptureFor(currentTheme, day);
       const docRef = db.collection('meta').doc('dailyScripture');
-      await docRef.set({ [today]: scripture }, { merge: true });
-      console.log('Daily scripture generated for', today);
+      await docRef.set({ [todayStr]: scripture }, { merge: true });
+      console.log('Daily scripture generated for', todayStr);
     } catch (err) {
       console.error('Error generating daily scripture:', err);
     }
@@ -119,8 +216,9 @@ export const chat = functions.https.onRequest(async (req, res) => {
 
     const text = await callGenAI(prompt);
     if (!text) throw new Error('Empty response from GenAI');
+    const audio = await synthesizeVoice(text);
 
-    res.json({ reply: text });
+    res.json({ reply: text, audio });
   } catch (err) {
     console.error('Error in chat endpoint:', err);
     res.status(500).json({ error: 'Failed to generate chat response' });

@@ -6,7 +6,35 @@
       "**/.*",
       "**/node_modules/**"
     ],
+    "headers": [
+      {
+        "source": "/index.html",
+        "headers": [
+          {
+            "key": "Cache-Control",
+            "value": "no-cache, no-store, must-revalidate"
+          }
+        ]
+      },
+      {
+        "source": "/api/**",
+        "headers": [
+          {
+            "key": "Cache-Control",
+            "value": "no-cache, no-store, must-revalidate"
+          }
+        ]
+      }
+    ],
     "rewrites": [
+      {
+        "source": "/api/chat",
+        "function": "chat"
+      },
+      {
+        "source": "/api/scripture",
+        "function": "getTodaysScripture"
+      },
       {
         "source": "**",
         "destination": "/index.html"
