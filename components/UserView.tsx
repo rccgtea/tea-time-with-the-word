@@ -1,7 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import { getTodaysScriptureFromFirestore } from '../services/dailyScriptureService';
 import { Scripture, BibleVersion } from '../types';
-import { BIBLE_VERSIONS, SCRIPTURE_CACHE_PREFIX } from '../constants';
+import { BIBLE_VERSIONS } from '../constants';
 import LoadingSpinner from './LoadingSpinner';
 import ShareIcon from './icons/ShareIcon';
 import VoiceAssistant from './VoiceAssistant';
@@ -14,19 +14,6 @@ interface UserViewProps {
 const SCRIPTURE_TZ =
   import.meta.env.VITE_SCRIPTURE_TIMEZONE || 'America/Denver';
 
-const getTodayString = () => {
-  try {
-    return new Intl.DateTimeFormat('en-CA', {
-      timeZone: SCRIPTURE_TZ,
-      year: 'numeric',
-      month: '2-digit',
-      day: '2-digit',
-    }).format(new Date());
-  } catch {
-    return new Date().toISOString().slice(0, 10);
-  }
-};
-
 const UserView: React.FC<UserViewProps> = ({ theme }) => {
   const [scripture, setScripture] = useState<Scripture | null>(null);
   const [loading, setLoading] = useState(false);
@@ -37,8 +24,6 @@ const UserView: React.FC<UserViewProps> = ({ theme }) => {
   const today = new Date();
   const dayOfMonth = today.getDate();
   const dateString = today.toLocaleDateString('en-US', { weekday: 'long', year: 'numeric', month: 'long', day: 'numeric' });
-  const todayKey = getTodayString();
-  const cacheKey = `${SCRIPTURE_CACHE_PREFIX}${todayKey}`; // YYYY-MM-DD
 
   useEffect(() => {
     if (!theme) {
@@ -52,16 +37,9 @@ const UserView: React.FC<UserViewProps> = ({ theme }) => {
       setError(null);
 
       try {
-        const cachedScripture = localStorage.getItem(cacheKey);
-        if (cachedScripture) {
-          setScripture(JSON.parse(cachedScripture));
-          return;
-        }
-
-  // Read today's scripture from Firestore (generated server-side).
-  const dailyScripture = await getTodaysScriptureFromFirestore();
-  setScripture(dailyScripture);
-        localStorage.setItem(cacheKey, JSON.stringify(dailyScripture));
+        // Always fetch fresh scripture from Firestore (no localStorage caching)
+        const dailyScripture = await getTodaysScriptureFromFirestore();
+        setScripture(dailyScripture);
       } catch (err) {
         if (err instanceof Error) {
           setError(err.message);
@@ -74,7 +52,7 @@ const UserView: React.FC<UserViewProps> = ({ theme }) => {
     };
 
     fetchScripture();
-  }, [theme, dayOfMonth, cacheKey]);
+  }, [theme, dayOfMonth]);
 
   const handleShare = async () => {
     if (scripture) {
