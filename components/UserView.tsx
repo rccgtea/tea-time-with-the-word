@@ -18,7 +18,7 @@ const UserView: React.FC<UserViewProps> = ({ theme }) => {
   const [scripture, setScripture] = useState<Scripture | null>(null);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
-  const [selectedVersion, setSelectedVersion] = useState<BibleVersion>('NIV');
+  const [selectedVersion, setSelectedVersion] = useState<BibleVersion>('KJV');
   const [isAssistantOpen, setIsAssistantOpen] = useState(false);
   const [isExpanded, setIsExpanded] = useState(false);
 
