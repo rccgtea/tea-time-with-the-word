@@ -20,6 +20,7 @@ const UserView: React.FC<UserViewProps> = ({ theme }) => {
   const [error, setError] = useState<string | null>(null);
   const [selectedVersion, setSelectedVersion] = useState<BibleVersion>('NIV');
   const [isAssistantOpen, setIsAssistantOpen] = useState(false);
+  const [isExpanded, setIsExpanded] = useState(false);
 
   const today = new Date();
   const dayOfMonth = today.getDate();
@@ -133,8 +134,29 @@ const UserView: React.FC<UserViewProps> = ({ theme }) => {
           </div>
 
           <p className="text-xl md:text-2xl leading-relaxed text-center font-serif my-6 min-h-[100px]">
-            "{scripture.versions[selectedVersion]}"
+            "{isExpanded && scripture.expandedVersions 
+              ? scripture.expandedVersions[selectedVersion] 
+              : scripture.versions[selectedVersion]}"
           </p>
+
+          {/* Read More button - only show if expandedVersions exist */}
+          {scripture.expandedVersions && (
+            <div className="flex justify-center mb-4">
+              <button
+                onClick={() => setIsExpanded(!isExpanded)}
+                className="px-4 py-2 text-sm font-semibold rounded-full bg-amber-400/20 hover:bg-amber-400/30 text-amber-300 transition-colors duration-200"
+              >
+                {isExpanded ? '← Show Less' : 'Read More →'}
+              </button>
+            </div>
+          )}
+
+          {/* Show expanded reference when expanded */}
+          {isExpanded && scripture.expandedReference && (
+            <p className="text-center text-amber-300/70 text-sm mb-4">
+              {scripture.expandedReference}
+            </p>
+          )}
 
           <div className="flex justify-center items-center gap-4 mt-8">
              <button

@@ -150,13 +150,27 @@ async function generateScriptureFor(theme: string, day: number, year: number, mo
   }
 
   // Build prompt with list of already-used scriptures to avoid duplicates
-  let prompt = `You are a biblical assistant for the 'RCCG the Eagles Ark' church. The theme for this month is "${theme}". Provide a single, relevant bible scripture for day ${day} of the month that speaks to this theme.`;
+  let prompt = `You are a biblical assistant for the 'RCCG the Eagles Ark' church. The theme for this month is "${theme}". 
+
+CRITICAL REQUIREMENTS:
+1. The scripture MUST be highly relevant to the monthly theme: "${theme}"
+2. The scripture should provide spiritual insight, encouragement, or teaching related to this theme
+3. Choose a powerful, meaningful verse that speaks directly to "${theme}"
+4. Provide a single bible scripture for day ${day} of the month.`;
   
   if (existingScriptures.length > 0) {
-    prompt += `\n\nIMPORTANT: The following scriptures have ALREADY been used this month. You MUST choose a DIFFERENT scripture:\n${existingScriptures.join(', ')}`;
+    prompt += `\n\nIMPORTANT: The following scriptures have ALREADY been used this month. You MUST choose a DIFFERENT scripture that is still relevant to the theme "${theme}":\n${existingScriptures.join(', ')}`;
   }
   
-  prompt += `\n\nReturn ONLY a JSON object that follows the schema with fields 'reference' and 'versions' (versions should include KJV, NKJV, NIV, MSG, NLT, AMP).`;
+  prompt += `\n\nThe scripture you choose must clearly relate to the theme "${theme}". 
+
+Return ONLY a JSON object with the following fields:
+- 'reference': the main verse (e.g., "John 3:16")
+- 'versions': object with the main verse in KJV, NKJV, NIV, MSG, NLT, AMP
+- 'expandedReference': the expanded range including 2-3 verses before and after for context (e.g., "John 3:14-18")
+- 'expandedVersions': object with the expanded passage in KJV, NKJV, NIV, MSG, NLT, AMP
+
+This allows readers to see the main verse first, then click "Read More" to see the surrounding context.`;
 
   const text = await callGenAI(prompt);
   if (!text) throw new Error('Empty response from GenAI');
@@ -168,6 +182,11 @@ async function generateScriptureFor(theme: string, day: number, year: number, mo
     .trim();
   const parsed = JSON.parse(cleaned);
   if (!parsed.reference || !parsed.versions) throw new Error('Invalid scripture JSON');
+  
+  // Expanded fields are optional but recommended
+  if (!parsed.expandedReference || !parsed.expandedVersions) {
+    console.warn('Scripture generated without expanded context. This is acceptable but not ideal.');
+  }
   
   // Verify the generated scripture is not a duplicate
   if (existingScriptures.includes(parsed.reference)) {

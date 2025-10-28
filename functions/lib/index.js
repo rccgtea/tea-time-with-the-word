@@ -153,8 +153,41 @@ async function synthesizeVoice(text) {
         return null;
     }
 }
-async function generateScriptureFor(theme, day) {
-    const prompt = `You are a biblical assistant for the 'RCCG the Eagles Ark' church. The theme for this month is "${theme}". Provide a single, relevant bible scripture for day ${day} of the month that speaks to this theme. Return ONLY a JSON object that follows the schema with fields 'reference' and 'versions' (versions should include KJV, NKJV, NIV, MSG, NLT, AMP).`;
+async function generateScriptureFor(theme, day, year, month) {
+    // Fetch all scriptures already generated this month to prevent duplicates
+    const docRef = db.collection('meta').doc('dailyScripture');
+    const snap = await docRef.get();
+    const existingScriptures = [];
+    if (snap.exists) {
+        const data = snap.data();
+        // Get all scriptures from the current month (format: YYYY-MM-DD)
+        const monthPrefix = `${year}-${String(month).padStart(2, '0')}`;
+        Object.keys(data).forEach(dateKey => {
+            if (dateKey.startsWith(monthPrefix) && data[dateKey]?.reference) {
+                existingScriptures.push(data[dateKey].reference);
+            }
+        });
+    }
+    // Build prompt with list of already-used scriptures to avoid duplicates
+    let prompt = `You are a biblical assistant for the 'RCCG the Eagles Ark' church. The theme for this month is "${theme}". 
+
+CRITICAL REQUIREMENTS:
+1. The scripture MUST be highly relevant to the monthly theme: "${theme}"
+2. The scripture should provide spiritual insight, encouragement, or teaching related to this theme
+3. Choose a powerful, meaningful verse that speaks directly to "${theme}"
+4. Provide a single bible scripture for day ${day} of the month.`;
+    if (existingScriptures.length > 0) {
+        prompt += `\n\nIMPORTANT: The following scriptures have ALREADY been used this month. You MUST choose a DIFFERENT scripture that is still relevant to the theme "${theme}":\n${existingScriptures.join(', ')}`;
+    }
+    prompt += `\n\nThe scripture you choose must clearly relate to the theme "${theme}". 
+
+Return ONLY a JSON object with the following fields:
+- 'reference': the main verse (e.g., "John 3:16")
+- 'versions': object with the main verse in KJV, NKJV, NIV, MSG, NLT, AMP
+- 'expandedReference': the expanded range including 2-3 verses before and after for context (e.g., "John 3:14-18")
+- 'expandedVersions': object with the expanded passage in KJV, NKJV, NIV, MSG, NLT, AMP
+
+This allows readers to see the main verse first, then click "Read More" to see the surrounding context.`;
     const text = await callGenAI(prompt);
     if (!text)
         throw new Error('Empty response from GenAI');
@@ -166,6 +199,15 @@ async function generateScriptureFor(theme, day) {
     const parsed = JSON.parse(cleaned);
     if (!parsed.reference || !parsed.versions)
         throw new Error('Invalid scripture JSON');
+    // Expanded fields are optional but recommended
+    if (!parsed.expandedReference || !parsed.expandedVersions) {
+        console.warn('Scripture generated without expanded context. This is acceptable but not ideal.');
+    }
+    // Verify the generated scripture is not a duplicate
+    if (existingScriptures.includes(parsed.reference)) {
+        console.warn(`Generated duplicate scripture: ${parsed.reference}. Retrying...`);
+        throw new Error('Generated duplicate scripture - AI ignored instructions');
+    }
     return parsed;
 }
 // HTTPS endpoint that returns today's scripture (reads Firestore or generates on-demand)
@@ -185,7 +227,7 @@ exports.getTodaysScripture = functions.https.onRequest(async (req, res) => {
         const themeDoc = await db.collection('meta').doc('themes').get();
         const monthKey = `${year}-${String(month).padStart(2, '0')}`;
         const currentTheme = (themeDoc.data() || {})[monthKey] || 'Encouragement';
-        const scripture = await generateScriptureFor(currentTheme, day);
+        const scripture = await generateScriptureFor(currentTheme, day, year, month);
         // Save under today key
         await docRef.set({ [todayStr]: scripture }, { merge: true });
         res.json(scripture);
@@ -205,7 +247,7 @@ exports.scheduledDailyScripture = functions.pubsub
         const themeDoc = await db.collection('meta').doc('themes').get();
         const monthKey = `${year}-${String(month).padStart(2, '0')}`;
         const currentTheme = (themeDoc.data() || {})[monthKey] || 'Encouragement';
-        const scripture = await generateScriptureFor(currentTheme, day);
+        const scripture = await generateScriptureFor(currentTheme, day, year, month);
         const docRef = db.collection('meta').doc('dailyScripture');
         await docRef.set({ [todayStr]: scripture }, { merge: true });
         console.log('Daily scripture generated for', todayStr);
