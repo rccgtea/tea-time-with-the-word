@@ -78,6 +78,46 @@ async function callGenAI(prompt: string) {
   return text;
 }
 
+// Specialized function for chat with lower temperature to reduce hallucination
+async function callGenAIForChat(prompt: string) {
+  if (!GENAI_API_KEY) throw new Error('GenAI API key not configured');
+
+  const url = `https://generativelanguage.googleapis.com/v1beta/models/${encodeURIComponent(GENAI_MODEL)}:generateContent?key=${encodeURIComponent(GENAI_API_KEY)}`;
+
+  const body = {
+    contents: [
+      {
+        role: 'user',
+        parts: [{ text: prompt }],
+      },
+    ],
+    generationConfig: {
+      temperature: 0.3, // Lower temperature for more factual, less creative responses
+      topP: 0.8,        // Reduce diversity to stick to high-probability (factual) tokens
+      topK: 20,         // Limit token selection to top 20 most likely
+    },
+  };
+
+  const resp = await fetch(url, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(body),
+  });
+
+  if (!resp.ok) {
+    const txt = await resp.text();
+    throw new Error(`GenAI HTTP error ${resp.status}: ${txt}`);
+  }
+
+  const json: any = await resp.json();
+  const text =
+    json?.candidates?.[0]?.content?.parts
+      ?.map((part: any) => part?.text || '')
+      .join('')
+      .trim() || '';
+  return text;
+}
+
 async function synthesizeVoice(text: string) {
   if (!text) return null;
   try {
@@ -259,11 +299,23 @@ export const chat = functions.https.onRequest(async (req, res) => {
       return;
     }
 
-    const systemInstruction = `You are a friendly and knowledgeable biblical assistant for the 'RCCG The Eagles Ark' church. The theme is "${theme || 'Encouragement'}". The scripture is ${scripture?.reference || ''} which reads: "${scripture?.text || ''}". Respond to the user's message in a concise, uplifting, and conversational style. Keep responses appropriate for a church audience.`;
+    const systemInstruction = `You are a faithful biblical assistant for 'RCCG The Eagles Ark' church. The theme is "${theme || 'Encouragement'}". The scripture is ${scripture?.reference || ''} which reads: "${scripture?.text || ''}".
+
+CRITICAL REQUIREMENTS:
+1. ONLY use information from the Holy Bible (Old and New Testament) when answering questions
+2. If you reference ANY biblical text, you MUST cite the specific book, chapter, and verse (e.g., "John 3:16 says...")
+3. Do NOT make up information or provide answers from non-biblical sources
+4. If you are unsure or do not know the answer, you MUST say "I don't know" or "I'm not certain about this from Scripture"
+5. Do NOT speculate, assume, or fabricate biblical information
+6. Keep responses concise, uplifting, and appropriate for a church audience
+7. Ground ALL theological or spiritual advice in specific Scripture references
+8. If the user asks about something not addressed in the Bible, clearly state: "The Bible doesn't specifically address this topic"
+
+Remember: Accuracy and biblical faithfulness are more important than providing an answer. When in doubt, admit uncertainty rather than risk providing incorrect information.`;
 
     const prompt = `${systemInstruction}\nUser: ${message}\nAssistant:`;
 
-    const text = await callGenAI(prompt);
+    const text = await callGenAIForChat(prompt);
     if (!text) throw new Error('Empty response from GenAI');
     const audio = await synthesizeVoice(text);
 
