@@ -6,7 +6,6 @@ import LoadingSpinner from './LoadingSpinner';
 import ShareIcon from './icons/ShareIcon';
 import VoiceAssistant from './VoiceAssistant';
 import MicrophoneIcon from './icons/MicrophoneIcon';
-import { requestNotificationPermission, areNotificationsEnabled } from '../services/notificationService';
 
 interface UserViewProps {
   theme: string;
@@ -58,14 +57,25 @@ const UserView: React.FC<UserViewProps> = ({ theme }) => {
     fetchScripture();
   }, [theme, dayOfMonth]);
 
-  // Check notification permission status on mount
+  // Check notification permission status on mount (only if supported)
   useEffect(() => {
-    setNotificationsEnabled(areNotificationsEnabled());
+    // Only check for notifications in browsers that support it
+    if (typeof window !== 'undefined' && 'Notification' in window && 'serviceWorker' in navigator) {
+      setNotificationsEnabled(Notification.permission === 'granted');
+    }
   }, []);
 
   const handleEnableNotifications = async () => {
+    // Check if notifications are supported before attempting
+    if (typeof window === 'undefined' || !('Notification' in window) || !('serviceWorker' in navigator)) {
+      alert('Push notifications are not supported in this browser.');
+      return;
+    }
+
     setRequestingPermission(true);
     try {
+      // Dynamically import notification service only when needed
+      const { requestNotificationPermission } = await import('../services/notificationService');
       const token = await requestNotificationPermission();
       if (token) {
         setNotificationsEnabled(true);

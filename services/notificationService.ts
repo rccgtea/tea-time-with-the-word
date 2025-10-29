@@ -1,6 +1,6 @@
 import { getMessaging, getToken, onMessage } from 'firebase/messaging';
-import { initializeApp } from 'firebase/app';
 import { getFirestore, doc, setDoc } from 'firebase/firestore';
+import { getApps, initializeApp } from 'firebase/app';
 
 const firebaseConfig = {
   apiKey: "AIzaSyDp5XZFCJcmXPB-UfpbKp4aosqRTcbm40o",
@@ -12,7 +12,8 @@ const firebaseConfig = {
   measurementId: "G-BFN92LJ629",
 };
 
-const app = initializeApp(firebaseConfig);
+// Use existing app if already initialized, otherwise create new one
+const app = getApps().length === 0 ? initializeApp(firebaseConfig) : getApps()[0];
 const db = getFirestore(app);
 
 // VAPID key for web push (Web Push certificate from Firebase Console)
@@ -20,12 +21,13 @@ const VAPID_KEY = 'BOMCfHHllgWMiODFgXe59tq_d_vOXz-E6Dlwasmj1snyLkZa_0Sz8A2ZZ0Ugy
 
 let messaging: any = null;
 
-// Initialize messaging only in browser environment
+// Initialize messaging only in browser environment that supports it
 if (typeof window !== 'undefined' && 'serviceWorker' in navigator) {
   try {
     messaging = getMessaging(app);
   } catch (error) {
-    console.error('Error initializing Firebase Messaging:', error);
+    console.warn('Firebase Messaging not supported in this browser:', error);
+    // Don't throw error - just log warning and continue without messaging
   }
 }
 
