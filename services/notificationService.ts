@@ -15,9 +15,8 @@ const firebaseConfig = {
 const app = initializeApp(firebaseConfig);
 const db = getFirestore(app);
 
-// VAPID key for web push (you'll need to generate this from Firebase Console)
-// Go to: Firebase Console > Project Settings > Cloud Messaging > Web Push certificates
-const VAPID_KEY = 'BK7YourVapidKeyHere'; // TODO: Replace with actual VAPID key
+// VAPID key for web push (Web Push certificate from Firebase Console)
+const VAPID_KEY = 'BOMCfHHllgWMiODFgXe59tq_d_vOXz-E6Dlwasmj1snyLkZa_0Sz8A2ZZ0UgyzurChC6g3N3J7qQDOsDfpGC3Q8';
 
 let messaging: any = null;
 
