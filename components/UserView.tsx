@@ -6,6 +6,7 @@ import LoadingSpinner from './LoadingSpinner';
 import ShareIcon from './icons/ShareIcon';
 import VoiceAssistant from './VoiceAssistant';
 import MicrophoneIcon from './icons/MicrophoneIcon';
+import { requestNotificationPermission, areNotificationsEnabled } from '../services/notificationService';
 
 interface UserViewProps {
   theme: string;
@@ -21,6 +22,8 @@ const UserView: React.FC<UserViewProps> = ({ theme }) => {
   const [selectedVersion, setSelectedVersion] = useState<BibleVersion>('KJV');
   const [isAssistantOpen, setIsAssistantOpen] = useState(false);
   const [isExpanded, setIsExpanded] = useState(false);
+  const [notificationsEnabled, setNotificationsEnabled] = useState(false);
+  const [requestingPermission, setRequestingPermission] = useState(false);
 
   const today = new Date();
   const dayOfMonth = today.getDate();
@@ -54,6 +57,29 @@ const UserView: React.FC<UserViewProps> = ({ theme }) => {
 
     fetchScripture();
   }, [theme, dayOfMonth]);
+
+  // Check notification permission status on mount
+  useEffect(() => {
+    setNotificationsEnabled(areNotificationsEnabled());
+  }, []);
+
+  const handleEnableNotifications = async () => {
+    setRequestingPermission(true);
+    try {
+      const token = await requestNotificationPermission();
+      if (token) {
+        setNotificationsEnabled(true);
+        alert('🔔 Notifications enabled! You\'ll receive daily scripture notifications at midnight MST.');
+      } else {
+        alert('Unable to enable notifications. Please check your browser settings.');
+      }
+    } catch (error) {
+      console.error('Error enabling notifications:', error);
+      alert('Failed to enable notifications. Please try again.');
+    } finally {
+      setRequestingPermission(false);
+    }
+  };
 
   const handleShare = async () => {
     if (scripture) {
@@ -174,6 +200,17 @@ const UserView: React.FC<UserViewProps> = ({ theme }) => {
               <ShareIcon className="h-5 w-5" />
               <span>Share</span>
             </button>
+            {!notificationsEnabled && (
+              <button
+                onClick={handleEnableNotifications}
+                disabled={requestingPermission}
+                className="flex items-center gap-2 px-4 py-2 rounded-full bg-amber-400/20 hover:bg-amber-400/30 text-amber-300 transition-colors duration-200 disabled:opacity-50"
+                aria-label="Enable push notifications"
+              >
+                <span>{requestingPermission ? '...' : '🔔'}</span>
+                <span>{requestingPermission ? 'Enabling...' : 'Notify Me'}</span>
+              </button>
+            )}
           </div>
         </>
       );

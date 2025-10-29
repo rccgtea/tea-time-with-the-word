@@ -244,6 +244,76 @@ This allows readers to see the main verse first, then click "Read More" to see t
     }
     return parsed;
 }
+// Send push notifications to all subscribed users
+async function sendDailyScriptureNotification(theme, reference) {
+    try {
+        // Fetch all FCM tokens from Firestore
+        const tokensSnapshot = await db.collection('fcmTokens').get();
+        if (tokensSnapshot.empty) {
+            console.log('No FCM tokens found. No notifications sent.');
+            return;
+        }
+        const tokens = [];
+        tokensSnapshot.forEach(doc => {
+            const data = doc.data();
+            if (data.token) {
+                tokens.push(data.token);
+            }
+        });
+        if (tokens.length === 0) {
+            console.log('No valid tokens found.');
+            return;
+        }
+        console.log(`Sending notifications to ${tokens.length} devices...`);
+        // Create the notification payload
+        const payload = {
+            notification: {
+                title: '📖 Today\'s Scripture is Ready!',
+                body: `${theme} - ${reference}`,
+                icon: '/vite.svg',
+            },
+            data: {
+                theme,
+                reference,
+                url: 'https://tea-time-with-the-word.web.app',
+            },
+        };
+        // Send notifications in batches (FCM limits to 500 tokens per batch)
+        const batchSize = 500;
+        for (let i = 0; i < tokens.length; i += batchSize) {
+            const batch = tokens.slice(i, i + batchSize);
+            const response = await admin.messaging().sendEachForMulticast({
+                tokens: batch,
+                notification: payload.notification,
+                data: payload.data,
+                webpush: {
+                    fcmOptions: {
+                        link: payload.data.url,
+                    },
+                },
+            });
+            console.log(`Batch ${Math.floor(i / batchSize) + 1}: ${response.successCount} sent, ${response.failureCount} failed`);
+            // Remove invalid tokens
+            if (response.failureCount > 0) {
+                const failedTokens = [];
+                response.responses.forEach((resp, idx) => {
+                    if (!resp.success) {
+                        failedTokens.push(batch[idx]);
+                    }
+                });
+                // Delete invalid tokens from Firestore
+                const deletePromises = failedTokens.map(token => db.collection('fcmTokens').doc(token).delete());
+                await Promise.all(deletePromises);
+                console.log(`Removed ${failedTokens.length} invalid tokens`);
+            }
+        }
+        console.log('Notifications sent successfully');
+    }
+    catch (error) {
+        console.error('Error sending notifications:', error);
+        throw error;
+    }
+}
 // HTTPS endpoint that returns today's scripture (reads Firestore or generates on-demand)
 exports.getTodaysScripture = functions.https.onRequest(async (req, res) => {
     try {
@@ -285,6 +355,14 @@ exports.scheduledDailyScripture = functions.pubsub
         const docRef = db.collection('meta').doc('dailyScripture');
         await docRef.set({ [todayStr]: scripture }, { merge: true });
         console.log('Daily scripture generated for', todayStr);
+        // Send push notifications to all subscribed users
+        try {
+            await sendDailyScriptureNotification(currentTheme, scripture.reference);
+        }
+        catch (notifError) {
+            console.error('Error sending notifications:', notifError);
+            // Don't fail the whole function if notifications fail
+        }
     }
     catch (err) {
         console.error('Error generating daily scripture:', err);
