@@ -40,6 +40,17 @@ const fetchFromFunction = async (): Promise<Scripture> => {
   }
 };
 
+const hasExpandedContext = (scripture: Scripture | null | undefined): boolean => {
+  if (!scripture) return false;
+  const expanded = scripture.expandedVersions;
+  return (
+    !!scripture.expandedReference &&
+    !!expanded &&
+    typeof expanded === 'object' &&
+    Object.keys(expanded).length > 0
+  );
+};
+
 export async function getTodaysScriptureFromFirestore(): Promise<Scripture> {
   const today = getTodayString();
   const docRef = doc(db, 'meta', 'dailyScripture');
@@ -51,7 +62,12 @@ export async function getTodaysScriptureFromFirestore(): Promise<Scripture> {
   if (!data || !data[today]) {
     return fetchFromFunction();
   }
-  return data[today] as Scripture;
+  const scripture = data[today] as Scripture;
+  if (!hasExpandedContext(scripture)) {
+    // Fallback to the HTTPS function which will regenerate and patch Firestore if needed
+    return fetchFromFunction();
+  }
+  return scripture;
 }
 
 export default getTodaysScriptureFromFirestore;

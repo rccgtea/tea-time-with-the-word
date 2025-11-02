@@ -202,18 +202,18 @@ async function generateScriptureFor(theme, day, year, month) {
             }
         });
     }
-    // Build prompt with list of already-used scriptures to avoid duplicates
-    let prompt = `You are a biblical assistant for the 'RCCG the Eagles Ark' church. The theme for this month is "${theme}". 
+    const buildPrompt = (attempt) => {
+        let prompt = `You are a biblical assistant for the 'RCCG the Eagles Ark' church. The theme for this month is "${theme}". 
 
 CRITICAL REQUIREMENTS:
 1. The scripture MUST be highly relevant to the monthly theme: "${theme}"
 2. The scripture should provide spiritual insight, encouragement, or teaching related to this theme
 3. Choose a powerful, meaningful verse that speaks directly to "${theme}"
 4. Provide a single bible scripture for day ${day} of the month.`;
-    if (existingScriptures.length > 0) {
-        prompt += `\n\nIMPORTANT: The following scriptures have ALREADY been used this month. You MUST choose a DIFFERENT scripture that is still relevant to the theme "${theme}":\n${existingScriptures.join(', ')}`;
-    }
-    prompt += `\n\nThe scripture you choose must clearly relate to the theme "${theme}". 
+        if (existingScriptures.length > 0) {
+            prompt += `\n\nIMPORTANT: The following scriptures have ALREADY been used this month. You MUST choose a DIFFERENT scripture that is still relevant to the theme "${theme}":\n${existingScriptures.join(', ')}`;
+        }
+        prompt += `\n\nThe scripture you choose must clearly relate to the theme "${theme}". 
 
 Return ONLY a JSON object with the following fields:
 - 'reference': the main verse (e.g., "John 3:16")
@@ -222,27 +222,61 @@ Return ONLY a JSON object with the following fields:
 - 'expandedVersions': object with the expanded passage in KJV, NKJV, NIV, MSG, NLT, AMP
 
 This allows readers to see the main verse first, then click "Read More" to see the surrounding context.`;
-    const text = await callGenAI(prompt);
-    if (!text)
-        throw new Error('Empty response from GenAI');
-    const cleaned = text
-        .trim()
-        .replace(/^```(?:json)?/i, '')
-        .replace(/```$/, '')
-        .trim();
-    const parsed = JSON.parse(cleaned);
-    if (!parsed.reference || !parsed.versions)
-        throw new Error('Invalid scripture JSON');
-    // Expanded fields are optional but recommended
-    if (!parsed.expandedReference || !parsed.expandedVersions) {
-        console.warn('Scripture generated without expanded context. This is acceptable but not ideal.');
+        if (attempt > 1) {
+            prompt += `\n\nATTEMPT ${attempt}: The previous response was missing the expanded context or was invalid JSON. You MUST include both 'expandedReference' and 'expandedVersions' for all requested translations. Return ONLY valid JSON.`;
+        }
+        return prompt;
+    };
+    const hasExpandedContext = (scripture) => {
+        const expanded = scripture?.expandedVersions;
+        return (!!scripture?.expandedReference &&
+            !!expanded &&
+            typeof expanded === 'object' &&
+            Object.keys(expanded).length > 0);
+    };
+    const maxAttempts = 3;
+    let lastParsed = null;
+    for (let attempt = 1; attempt <= maxAttempts; attempt++) {
+        const prompt = buildPrompt(attempt);
+        const text = await callGenAI(prompt);
+        if (!text) {
+            console.warn(`Empty response from GenAI on attempt ${attempt}`);
+            continue;
+        }
+        try {
+            const cleaned = text
+                .trim()
+                .replace(/^```(?:json)?/i, '')
+                .replace(/```$/, '')
+                .trim();
+            const parsed = JSON.parse(cleaned);
+            if (!parsed.reference || !parsed.versions) {
+                throw new Error('Invalid scripture JSON');
+            }
+            if (existingScriptures.includes(parsed.reference)) {
+                console.warn(`Generated duplicate scripture: ${parsed.reference}. Retrying...`);
+                continue;
+            }
+            lastParsed = parsed;
+            if (!hasExpandedContext(parsed)) {
+                console.warn(`Scripture generated without expanded context on attempt ${attempt}.`);
+                if (attempt < maxAttempts) {
+                    continue;
+                }
+            }
+            return parsed;
+        }
+        catch (err) {
+            console.error(`Failed to parse scripture JSON on attempt ${attempt}:`, err);
+            if (attempt === maxAttempts) {
+                throw err;
+            }
+        }
     }
-    // Verify the generated scripture is not a duplicate
-    if (existingScriptures.includes(parsed.reference)) {
-        console.warn(`Generated duplicate scripture: ${parsed.reference}. Retrying...`);
-        throw new Error('Generated duplicate scripture - AI ignored instructions');
+    if (lastParsed) {
+        return lastParsed;
     }
-    return parsed;
+    throw new Error('Unable to generate scripture with expanded context after retries.');
 }
 // Send push notifications to all subscribed users
 async function sendDailyScriptureNotification(theme, reference) {
@@ -323,8 +357,16 @@ exports.getTodaysScripture = functions.https.onRequest(async (req, res) => {
         if (snap.exists) {
             const data = snap.data();
             if (data && data[todayStr]) {
-                res.json(data[todayStr]);
-                return;
+                const stored = data[todayStr];
+                const hasExpanded = stored?.expandedReference &&
+                    stored?.expandedVersions &&
+                    typeof stored.expandedVersions === 'object' &&
+                    Object.keys(stored.expandedVersions).length > 0;
+                if (hasExpanded) {
+                    res.json(stored);
+                    return;
+                }
+                console.warn('Stored scripture missing expanded context. Regenerating via HTTPS fallback.');
             }
         }
         // If not present, generate on-demand (safe fallback). Read current theme.

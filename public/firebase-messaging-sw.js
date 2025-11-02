@@ -1,5 +1,6 @@
-// Firebase Cloud Messaging Service Worker
+// Firebase Cloud Messaging Service Worker v1.1
 // This file handles background push notifications
+// Updated: 2025-11-01 to bust cache for Read More feature
 
 importScripts('https://www.gstatic.com/firebasejs/10.7.1/firebase-app-compat.js');
 importScripts('https://www.gstatic.com/firebasejs/10.7.1/firebase-messaging-compat.js');

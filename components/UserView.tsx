@@ -184,7 +184,7 @@ const UserView: React.FC<UserViewProps> = ({ theme }) => {
                 onClick={() => setIsExpanded(!isExpanded)}
                 className="px-4 py-2 text-sm font-semibold rounded-full bg-amber-400/20 hover:bg-amber-400/30 text-amber-300 transition-colors duration-200"
               >
-                {isExpanded ? '← Show Less' : 'Read More →'}
+                {isExpanded ? 'Show Less' : 'Read More'}
               </button>
             </div>
           )}
