@@ -187,6 +187,30 @@ async function synthesizeVoice(text) {
         return null;
     }
 }
+// Remove markdown emphasis so the voice output doesn't read punctuation like asterisks.
+function stripMarkdownForSpeech(text) {
+    if (!text)
+        return text;
+    return (text
+        // Bold/italic markers
+        .replace(/(\*\*|__)(.*?)\1/g, '$2')
+        .replace(/(\*|_)(.*?)\1/g, '$2')
+        // Inline code
+        .replace(/`([^`]*)`/g, '$1')
+        // Links: keep link text
+        .replace(/\[([^\]]+)]\(([^)]+)\)/g, '$1')
+        // Images: keep alt text
+        .replace(/!\[([^\]]*)]\(([^)]+)\)/g, '$1')
+        // Blockquote markers
+        .replace(/^>\s?/gm, '')
+        // Heading markers
+        .replace(/^#{1,6}\s*/gm, '')
+        // Collapse leftover asterisks/underscores
+        .replace(/[*_]+/g, '')
+        // Normalise whitespace
+        .replace(/\s+/g, ' ')
+        .trim());
+}
 async function generateScriptureFor(theme, day, year, month) {
     // Fetch all scriptures already generated this month to prevent duplicates
     const docRef = db.collection('meta').doc('dailyScripture');
@@ -439,7 +463,7 @@ Remember: Accuracy and biblical faithfulness are more important than providing a
         const text = await callGenAIForChat(prompt);
         if (!text)
             throw new Error('Empty response from GenAI');
-        const audio = await synthesizeVoice(text);
+        const audio = await synthesizeVoice(stripMarkdownForSpeech(text));
         res.json({ reply: text, audio });
     }
     catch (err) {
