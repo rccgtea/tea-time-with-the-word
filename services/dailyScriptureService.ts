@@ -10,7 +10,7 @@ const SCRIPTURE_TZ =
   import.meta.env.VITE_SCRIPTURE_TIMEZONE || 'America/Denver';
 const SCRIPTURE_ENDPOINT =
   import.meta.env.VITE_SCRIPTURE_ENDPOINT ||
-  '/api/scripture';
+  'https://us-central1-tea-time-with-the-word.cloudfunctions.net/getTodaysScripture';
 
 const getTodayString = () => {
   try {

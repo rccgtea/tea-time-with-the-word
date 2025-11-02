@@ -42,6 +42,8 @@ const UserView: React.FC<UserViewProps> = ({ theme }) => {
       try {
         // Always fetch fresh scripture from Firestore (no localStorage caching)
         const dailyScripture = await getTodaysScriptureFromFirestore();
+        console.log('Fetched scripture:', dailyScripture);
+        console.log('Has expandedVersions?', !!dailyScripture?.expandedVersions);
         setScripture(dailyScripture);
       } catch (err) {
         if (err instanceof Error) {
